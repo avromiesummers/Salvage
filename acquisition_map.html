@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Acquisition Analysis Map</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+        #map {
+            height: 100vh;
+        }
+        .leaflet-popup-content-wrapper {
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .leaflet-popup-content {
+            font-size: 0.875rem;
+            line-height: 1.25rem;
+            margin: 1rem;
+        }
+        .analysis-button {
+            margin-top: 8px;
+            padding: 6px 12px;
+            border: none;
+            background-color: #4f46e5;
+            color: white;
+            border-radius: 0.375rem;
+            font-weight: 500;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            width: 100%;
+        }
+        .analysis-button:hover {
+            background-color: #4338ca;
+        }
+        .compare-button {
+            background-color: #16a34a; /* green-600 */
+        }
+        .compare-button:hover {
+            background-color: #15803d; /* green-700 */
+        }
+        /* Custom Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px;}
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <div class="w-full md:w-1/3 lg:w-1/4 bg-white shadow-lg flex flex-col z-[1000]">
+            <div class="p-4 border-b flex justify-between items-center">
+                <div>
+                    <h1 class="text-xl font-bold text-gray-800">Acquisition Targets</h1>
+                    <p class="text-sm text-gray-500">Filter, search, and analyze locations.</p>
+                </div>
+                <button onclick="openModal('help-modal')" class="text-gray-500 hover:text-indigo-600 transition-colors" title="Help">
+                    <i class="fas fa-question-circle fa-2x"></i>
+                </button>
+            </div>
+
+            <!-- Filters -->
+            <div class="p-4 border-b">
+                <h2 class="font-semibold text-gray-700 mb-2">Filter by Category</h2>
+                <div id="filter-container" class="space-y-2"></div>
+            </div>
+
+            <!-- Search -->
+            <div class="p-4 border-b">
+                 <h2 class="font-semibold text-gray-700 mb-2">Search Locations</h2>
+                <input type="text" id="search-input" placeholder="Search by name or address..." class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+            
+            <!-- Location List -->
+            <div class="flex-grow overflow-y-auto custom-scrollbar" id="location-list">
+                <!-- Location items will be injected here -->
+            </div>
+
+            <!-- Comparison Tool -->
+            <div class="p-4 border-t bg-gray-50">
+                <h2 class="font-semibold text-gray-700 mb-2">Compare Two Locations</h2>
+                <div class="space-y-2">
+                     <select id="compare-select-1" class="w-full px-3 py-2 border border-gray-300 rounded-md"></select>
+                     <select id="compare-select-2" class="w-full px-3 py-2 border border-gray-300 rounded-md"></select>
+                </div>
+                <button onclick="runComparison()" class="analysis-button compare-button mt-3">
+                    <i class="fas fa-balance-scale"></i> Compare Sites
+                </button>
+            </div>
+        </div>
+
+        <!-- Map -->
+        <div class="w-full md:w-2/3 lg:w-3/4">
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <!-- Analysis Modal -->
+    <div id="analysis-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-[2000] hidden">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h2 id="analysis-modal-title" class="text-xl font-bold text-gray-800"></h2>
+                <button onclick="closeModal('analysis-modal')" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 overflow-y-auto custom-scrollbar">
+                <div id="loading-spinner" class="flex justify-center items-center h-64">
+                    <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-600"></div>
+                </div>
+                <div id="analysis-result"></div>
+            </div>
+             <div class="p-4 bg-gray-50 border-t text-xs text-gray-500 rounded-b-lg">
+                Powered by Gemini. Analysis is for informational purposes only.
+            </div>
+        </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div id="help-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-[2000] hidden">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h2 class="text-xl font-bold text-gray-800"><i class="fas fa-question-circle text-indigo-600 mr-2"></i>How to Use This Tool</h2>
+                <button onclick="closeModal('help-modal')" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 overflow-y-auto custom-scrollbar space-y-4 text-gray-700">
+                <div>
+                    <h3 class="font-bold text-lg text-gray-800">1. Exploring Locations</h3>
+                    <p>The map displays all potential acquisition targets. Each marker is color-coded by its category.</p>
+                    <ul class="list-disc list-inside mt-2 ml-4 space-y-1">
+                        <li><strong>Click a marker on the map</strong> to see its name and address.</li>
+                        <li><strong>Click an item in the sidebar list</strong> to automatically zoom to its marker on the map.</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg text-gray-800">2. Filtering and Searching</h3>
+                    <p>Use the tools in the sidebar to narrow down the locations shown.</p>
+                     <ul class="list-disc list-inside mt-2 ml-4 space-y-1">
+                        <li><strong>Filter by Category:</strong> Check or uncheck the boxes to show or hide location categories.</li>
+                        <li><strong>Search:</strong> Type in the search box to find locations by name or address. The map and list will update as you type.</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg text-gray-800">3. AI-Powered Analysis (Gemini)</h3>
+                    <p>Leverage AI to get instant strategic insights on your targets.</p>
+                     <ul class="list-disc list-inside mt-2 ml-4 space-y-1">
+                        <li><strong>Analyze Location:</strong> Click the <button class="analysis-button !w-auto !py-1 !px-2 !text-xs"><i class="fas fa-wand-magic-sparkles"></i> Analyze Location</button> button in a map popup to get a detailed breakdown of a single site's advantages and risks.</li>
+                        <li><strong>Compare Sites:</strong> Use the dropdowns at the bottom of the sidebar to select two locations, then click the <button class="analysis-button compare-button !w-auto !py-1 !px-2 !text-xs"><i class="fas fa-balance-scale"></i> Compare Sites</button> button for a side-by-side AI comparison.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
+    <script type="module">
+        // --- App State ---
+        let map;
+        const markers = {};
+        const locations = [
+            { id: 1, name: "Poconos Auto Salvage (Garage)", address: "2169 Route 611, Pocono Twp, PA", lat: 41.0655, lng: -75.3019, category: "Foundational" },
+            { id: 2, name: "Poconos Auto Salvage (Yard)", address: "3111-3117 Wiscasset Dr, Pocono Twp, PA", lat: 41.0560, lng: -75.3193, category: "Foundational" },
+            { id: 3, name: "Classic Cars of South Carolina", address: "2424 South Frontage Road, Gray Court, SC 29645", lat: 34.6293, lng: -82.1157, category: "Foundational" },
+            { id: 4, name: "Dudek Auto Recycling", address: "55 Hall Road, Londonderry, NH 03053", lat: 42.8722, lng: -71.3283, category: "Primary Future" },
+            { id: 5, name: "708 Hawk Hwy", address: "708 Hawk Hwy, Lost Creek, WV 26385", lat: 39.1509, lng: -80.4548, category: "Primary Future" },
+            { id: 6, name: "Newberrytown Auto Salvage", address: "2650 Lewisberry Road, York Haven, PA 17370", lat: 40.1384, lng: -76.7869, category: "Primary Future" },
+            { id: 7, name: "246 Gale Road", address: "246 Gale Road, Mongaup Valley, New York 12762", lat: 41.6163, lng: -74.6968, category: "Primary Future" },
+            { id: 8, name: "Road Tested Parts - Carnesville, GA (1)", address: "774 Highway 320, Carnesville, GA 30521", lat: 34.3323, lng: -83.2846, category: "Road Tested Parts" },
+            { id: 9, name: "Road Tested Parts - Maiden, NC", address: "3978 S Nc 16 Hwy, Maiden, NC 28650", lat: 35.5492, lng: -81.1895, category: "Road Tested Parts" },
+            { id: 10, name: "Road Tested Parts - Carnesville, GA (2)", address: "480 New Bethel Rd, Carnesville, GA 30521", lat: 34.3853, lng: -83.2014, category: "Road Tested Parts" },
+            { id: 11, name: "Bi County Auto Savage", address: "1 Macadam St, Bay Shore, NY 11706", lat: 40.7393, lng: -73.2662, category: "Tertiary" },
+            { id: 12, name: "Baldridge Recycling", address: "1219 Private Road 1060, West Plains, MO 65775", lat: 36.7589, lng: -91.8543, category: "Tertiary" },
+            { id: 13, name: "Scrap Metals Dr", address: "1234 Scrap Metals Dr, Greene Junction, PA 15425", lat: 39.8821, lng: -79.9142, category: "Tertiary" },
+            { id: 14, name: "211 Murphy Road", address: "211 Murphy Road, Hartford, CT 06114", lat: 41.7371, lng: -72.6582, category: "Tertiary" },
+            { id: 15, name: "Scrap yard/auto recycling facility", address: "486 S Mountain Blvd, Mountain Top, PA 18707", lat: 41.1578, lng: -75.9023, category: "Tertiary" },
+            { id: 16, name: "Licensed recycling center & scrap yard", address: "58 Basin St, Concord, NH 03301", lat: 43.1975, lng: -71.5165, category: "Tertiary" },
+            { id: 17, name: "Auto Recycling Property and Business", address: "3210 East 65th Street, Cleveland, OH 44127", lat: 41.4646, lng: -81.6441, category: "Tertiary" },
+            { id: 18, name: "Colebrook Automotive", address: "2990 County Rd 6, Yarker, ON K0K 3N0, Canada", lat: 44.3676, lng: -76.7801, category: "Tertiary" },
+            { id: 19, name: "Kent-Land", address: "2400 W Oxford Ave, Sheridan CO 80110", lat: 39.6515, lng: -105.0181, category: "Tertiary" },
+            { id: 20, name: "Sixth Street Industrial Site (Office)", address: "3830 Starr Centre Dr, Suite 2, Canfield, OH 44406", lat: 41.0362, lng: -80.7570, category: "Tertiary" },
+            { id: 21, name: "302 Parker Drive", address: "302 Parker Dr, Beaufort, SC 29906", lat: 32.4046, lng: -80.7061, category: "Tertiary" }
+        ];
+
+        const categories = {
+            "Foundational": { color: "#1d4ed8", icon: "fa-solid fa-flag" }, // blue-700
+            "Primary Future": { color: "#ca8a04", icon: "fa-solid fa-star" }, // yellow-600
+            "Road Tested Parts": { color: "#059669", icon: "fa-solid fa-car-burst" }, // emerald-600
+            "Tertiary": { color: "#a21caf", icon: "fa-solid fa-plus" } // fuchsia-700
+        };
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            initFilters();
+            initSearch();
+            initComparisonTool();
+            updateMapAndList();
+        });
+
+        function initMap() {
+            map = L.map('map').setView([39.8283, -98.5795], 4);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+        }
+
+        // --- Filtering and Rendering ---
+        function initFilters() {
+            const container = document.getElementById('filter-container');
+            Object.keys(categories).forEach(cat => {
+                const color = categories[cat].color;
+                const checkboxHtml = `
+                    <label class="flex items-center space-x-3 cursor-pointer">
+                        <input type="checkbox" class="form-checkbox h-5 w-5 rounded" style="accent-color: ${color};" checked onchange="updateMapAndList()" data-category="${cat}">
+                        <span class="text-gray-700">${cat}</span>
+                    </label>
+                `;
+                container.innerHTML += checkboxHtml;
+            });
+        }
+
+        function initSearch() {
+            document.getElementById('search-input').addEventListener('input', updateMapAndList);
+        }
+
+        function getVisibleCategories() {
+            const visible = [];
+            document.querySelectorAll('#filter-container input:checked').forEach(cb => {
+                visible.push(cb.dataset.category);
+            });
+            return visible;
+        }
+        
+        function getSearchTerm() {
+            return document.getElementById('search-input').value.toLowerCase();
+        }
+
+        function updateMapAndList() {
+            // Clear existing layers
+            Object.values(markers).forEach(marker => map.removeLayer(marker));
+            const locationList = document.getElementById('location-list');
+            locationList.innerHTML = '';
+            
+            const visibleCategories = getVisibleCategories();
+            const searchTerm = getSearchTerm();
+
+            const filteredLocations = locations.filter(loc => {
+                const inCategory = visibleCategories.includes(loc.category);
+                const matchesSearch = loc.name.toLowerCase().includes(searchTerm) || loc.address.toLowerCase().includes(searchTerm);
+                return inCategory && matchesSearch;
+            });
+
+            // Render new list and markers
+            filteredLocations.forEach(loc => {
+                addMarkerToMap(loc);
+                addLocationToList(loc);
+            });
+        }
+
+        function createColoredIcon(category) {
+            const catInfo = categories[category];
+            return L.divIcon({
+                html: `<i class="${catInfo.icon} fa-2x" style="color: ${catInfo.color};"></i>`,
+                className: 'bg-transparent border-none',
+                iconSize: [30, 30],
+                iconAnchor: [15, 30],
+                popupAnchor: [0, -30]
+            });
+        }
+
+        function addMarkerToMap(location) {
+            const icon = createColoredIcon(location.category);
+            const marker = L.marker([location.lat, location.lng], { icon }).addTo(map);
+            
+            const safeName = location.name.replace(/'/g, "\\'").replace(/"/g, '\\"');
+            const safeAddress = location.address.replace(/'/g, "\\'").replace(/"/g, '\\"');
+            
+            marker.bindPopup(`
+                <div class="font-sans text-center">
+                    <b class="text-base text-gray-800">${location.name}</b>
+                    <p class="text-gray-600">${location.address}</p>
+                    <button class="analysis-button" onclick="analyzeLocation('${safeName}', '${safeAddress}')">
+                        <i class="fas fa-wand-magic-sparkles"></i> Analyze Location
+                    </button>
+                </div>
+            `);
+            markers[location.id] = marker;
+        }
+
+        function addLocationToList(location) {
+            const list = document.getElementById('location-list');
+            const catInfo = categories[location.category];
+            const item = document.createElement('div');
+            item.className = 'px-4 py-3 border-b hover:bg-gray-100 cursor-pointer flex items-center space-x-3';
+            item.innerHTML = `
+                <i class="${catInfo.icon}" style="color: ${catInfo.color};"></i>
+                <div>
+                    <p class="font-semibold text-gray-800">${location.name}</p>
+                    <p class="text-sm text-gray-500">${location.address}</p>
+                </div>
+            `;
+            item.addEventListener('click', () => {
+                map.flyTo([location.lat, location.lng], 14);
+                markers[location.id].openPopup();
+            });
+            list.appendChild(item);
+        }
+
+        // --- Comparison Tool ---
+        function initComparisonTool() {
+            const select1 = document.getElementById('compare-select-1');
+            const select2 = document.getElementById('compare-select-2');
+            locations.forEach(loc => {
+                select1.innerHTML += `<option value="${loc.id}">${loc.name}</option>`;
+                select2.innerHTML += `<option value="${loc.id}">${loc.name}</option>`;
+            });
+            select2.selectedIndex = 1; // Default to a different second option
+        }
+
+        window.runComparison = async function() {
+            const id1 = document.getElementById('compare-select-1').value;
+            const id2 = document.getElementById('compare-select-2').value;
+
+            if (id1 === id2) {
+                // Using a custom modal for alerts is better, but alert is simple for this case.
+                alert("Please select two different locations to compare.");
+                return;
+            }
+
+            const loc1 = locations.find(l => l.id == id1);
+            const loc2 = locations.find(l => l.id == id2);
+            
+            openModal('analysis-modal', `⚔️ Comparison: ${loc1.name} vs. ${loc2.name}`);
+
+            const prompt = `
+                You are a business development analyst. Provide a detailed side-by-side comparison for acquiring two auto salvage/recycling properties.
+                
+                **Location 1:** ${loc1.name} (${loc1.address})
+                **Location 2:** ${loc2.name} (${loc2.address})
+
+                Compare them across these key strategic points:
+                1.  **Market Access & Logistics:** Proximity to highways, cities, ports.
+                2.  **Customer & Supplier Base:** Density of repair shops, dealerships, industrial zones.
+                3.  **Competitive Landscape:** Likelihood of other major competitors nearby.
+                4.  **Regulatory Environment:** Potential challenges based on state/local laws (e.g., environmental regulations in NY vs. PA).
+                5.  **Overall Recommendation:** Conclude with a brief summary of which location seems more promising and why.
+
+                Format the output as a clean, two-column HTML table. Use <th> for the criteria (e.g., "Market Access") and <td> for the analysis of each location. Do not include <html> or <body> tags. The table should have three columns: Criteria, Location 1, Location 2.
+            `;
+            
+            await callGemini(prompt);
+        }
+
+        // --- Gemini API & Modals ---
+        window.analyzeLocation = async function(name, address) {
+            openModal('analysis-modal', `✨ Analysis: ${name}`);
+            const prompt = `
+                You are a business development analyst for a large auto recycling and salvage company. 
+                Provide a concise acquisition analysis for **${name} at ${address}**. Focus on strategic value.
+
+                Provide a summary covering these three points:
+                1.  **Geographic & Logistic Advantages:** (e.g., proximity to major highways, ports, urban centers, industrial parks)
+                2.  **Potential Market & Customer Base:** (e.g., population density, nearby businesses that would be customers or suppliers like repair shops or dealerships)
+                3.  **Potential Risks & Concerns:** (e.g., potential for strict environmental regulations in that state, local competition, zoning issues)
+
+                Please provide the output in simple HTML format. Use <h3> for the titles (like 'Geographic & Logistic Advantages') and <p> for the descriptive text. Do not include <html> or <body> tags.
+            `;
+            await callGemini(prompt);
+        }
+        
+        async function callGemini(prompt) {
+            const analysisResult = document.getElementById('analysis-result');
+            try {
+                let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+                const payload = { contents: chatHistory };
+                const apiKey = ""; // Handled by environment
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) throw new Error(`API request failed: ${response.statusText}`);
+
+                const result = await response.json();
+                
+                let analysisText = "Could not retrieve analysis. Please try again.";
+                if (result.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    analysisText = result.candidates[0].content.parts[0].text;
+                }
+                
+                analysisResult.innerHTML = analysisText;
+
+            } catch (error) {
+                console.error("Error calling Gemini API:", error);
+                analysisResult.innerHTML = `<div class="text-red-600"><h3 class="font-bold">Error</h3><p>${error.message}</p></div>`;
+            } finally {
+                document.getElementById('loading-spinner').style.display = 'none';
+            }
+        }
+        
+        window.openModal = function(modalId, title) {
+            const modal = document.getElementById(modalId);
+            if (modalId === 'analysis-modal') {
+                document.getElementById('analysis-modal-title').textContent = title;
+                document.getElementById('loading-spinner').style.display = 'flex';
+                document.getElementById('analysis-result').innerHTML = '';
+            }
+            modal.classList.remove('hidden');
+        }
+
+        window.closeModal = function(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
+        }
+
+    </script>
+
+</body>
+</html>
